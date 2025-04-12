@@ -2,42 +2,30 @@ import os
 import pandas as pd
 import sqlite3
 
-# --- ユーザー定義セクション ---
-excel_file_name = "データベース.xlsx"       # static/excel_files 内のExcelファイル名
-header_row = 0                         # ヘッダー行番号（例：2行目なら1）
-hourly_db_name = "output_hourly.db"   # 1時間平均DB
-daily_db_name = "output_daily.db"     # 1日平均DB
-# ----------------------------
+def load_excel_to_dataframe(excel_file_path, header_row):
+    """
+    Excelファイルを読み込み、Timestamp列をdatetimeに変換し、インデックスに設定する。
+    """
+    df = pd.read_excel(excel_file_path, header=header_row)
+    df.rename(columns={df.columns[0]: "Timestamp"}, inplace=True)
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+    df.set_index("Timestamp", inplace=True)
+    df = df.apply(pd.to_numeric, errors='coerce')  # 数値変換（エラーはNaN）
+    return df
 
-# Excelパス構築
-excel_path = os.path.join("static", "excel_files", excel_file_name)
+def resample_and_save_to_db(df, rule, db_file):
+    """
+    指定された周期で平均化し、SQLite DBに保存。
+    各カラムごとにテーブルを作成（Timestamp + 1カラム構成）。
+    """
+    resampled_df = df.resample(rule).mean()
 
-# Excelファイルの読み込み
-df = pd.read_excel(excel_path, header=header_row)
-
-# Timestamp列名を統一（最左列がTimestamp）
-df.rename(columns={df.columns[0]: "Timestamp"}, inplace=True)
-
-# Timestampをdatetime型に変換
-df["Timestamp"] = pd.to_datetime(df["Timestamp"])
-
-# インデックスに設定（リサンプルのため）
-df.set_index("Timestamp", inplace=True)
-
-# データ型を float に変換（エラーはNaN）
-df = df.apply(pd.to_numeric, errors="coerce")
-
-# ------------------------------
-# 平均処理と保存関数
-# ------------------------------
-def save_aggregated_to_db(df_resampled, db_name):
-    conn = sqlite3.connect(db_name)
+    conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
 
-    for column in df_resampled.columns:
+    for column in resampled_df.columns:
         table_name = column
 
-        # テーブル作成（既存テーブル削除）
         cursor.execute(f"DROP TABLE IF EXISTS `{table_name}`")
         cursor.execute(f"""
             CREATE TABLE `{table_name}` (
@@ -46,21 +34,27 @@ def save_aggregated_to_db(df_resampled, db_name):
             )
         """)
 
-        # DataFrameとして保存（リサンプル結果）
-        temp_df = df_resampled[[column]].reset_index()
+        temp_df = resampled_df[[column]].reset_index()
         temp_df.to_sql(table_name, conn, if_exists='append', index=False)
 
     conn.close()
-    print(f"{db_name} に保存完了。")
+    print(f"[✓] {db_file} に {rule} 平均で保存完了。")
 
-# ------------------------------
-# 1時間平均（Hourly）
-# ------------------------------
-hourly_df = df.resample("H").mean()
-save_aggregated_to_db(hourly_df, hourly_db_name)
+def main():
+    # --- ユーザー定義セクション ---
+    excel_file_name = "sample.xlsx"         # static/excel_files内のExcelファイル名
+    header_row = 0                           # ヘッダー行の行番号（0始まり）
+    hourly_db = "output_hourly.db"
+    daily_db = "output_daily.db"
+    # -----------------------------
 
-# ------------------------------
-# 1日平均（Daily）
-# ------------------------------
-daily_df = df.resample("D").mean()
-save_aggregated_to_db(daily_df, daily_db_name)
+    excel_file_path = os.path.join("static", "excel_files", excel_file_name)
+
+    df = load_excel_to_dataframe(excel_file_path, header_row)
+
+    resample_and_save_to_db(df, "H", hourly_db)
+    resample_and_save_to_db(df, "D", daily_db)
+
+if __name__ == "__main__":
+    main()
+
