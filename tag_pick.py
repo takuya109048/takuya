@@ -40,11 +40,15 @@ def main():
         return
 
     picked_words = []
+    list_name = None # Initialize list_name
 
     console.print(Panel("[bold]単語ピックアップツールへようこそ！[/bold]", style="bold blue"))
 
     while True:
-        console.print("\n[bold green]現在のピックアップリスト:[/bold green]")
+        if list_name:
+            console.print(f"\n[bold green]現在のピックアップリスト ({list_name}):[/bold green]")
+        else:
+            console.print("\n[bold green]現在のピックアップリスト:[/bold green]")
         if picked_words:
             console.print(", ".join(picked_words))
         else:
@@ -55,6 +59,7 @@ def main():
             choices=[
                 "単語を検索してピックアップする",
                 "ピックアップリストから削除する",
+                "名前を設定する",
                 "ヘルプを表示する",
                 "終了する",
             ],
@@ -65,10 +70,16 @@ def main():
             break
 
         elif action == "単語を検索してピックアップする":
-            search_term = questionary.text("検索語を入力してください:").ask()
+            search_term = questionary.autocomplete(
+                "検索語を入力してください:",
+                choices=all_words,
+                validate=lambda text: True if text else "検索語を入力してください。",
+            ).ask()
+
             if not search_term:
                 continue
 
+            # Filter results based on the final search_term after autocomplete
             search_results = sorted([w for w in all_words if search_term.lower() in w.lower() and w not in picked_words])
 
             if not search_results:
@@ -98,6 +109,13 @@ def main():
             if words_to_remove:
                 picked_words = [w for w in picked_words if w not in words_to_remove]
                 console.print(f"[bold yellow]✗ {len(words_to_remove)}件の単語を削除しました。[/bold yellow]")
+
+        elif action == "名前を設定する":
+            list_name = questionary.text("ピックアップリストの名前を入力してください:").ask()
+            if list_name:
+                console.print(f"[bold blue]リスト名が「{list_name}」に設定されました。[/bold blue]")
+            else:
+                console.print("[yellow]リスト名は設定されませんでした。[/yellow]")
 
         elif action == "ヘルプを表示する":
             print_help()
